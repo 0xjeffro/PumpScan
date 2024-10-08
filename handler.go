@@ -56,7 +56,7 @@ func WebhookHandler(bytes []byte) {
 			continue
 		}
 		// if there is not a bundle of buy and sell, continue
-		if nBuy+nSell == 1 && isCreate == false {
+		if nBuy+nSell <= 1 && isCreate == false {
 			continue
 		}
 		row := db.PumpInsiderEvent{
