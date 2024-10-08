@@ -9,6 +9,7 @@ import supa "github.com/nedpals/supabase-go"
 type PumpInsiderEvent struct {
 	Tx        string    `json:"tx"`
 	BlockTime time.Time `json:"block_time"`
+	Mint      string    `json:"mint"`
 	NBuy      int       `json:"n_buy"`
 	NSell     int       `json:"n_sell"`
 	BuyAmt    uint64    `json:"buy_amt"`

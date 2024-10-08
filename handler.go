@@ -3,7 +3,6 @@ package main
 import (
 	"PumpScan/db"
 	"encoding/json"
-	"fmt"
 	"github.com/0xjeffro/tx-parser/solana"
 	"github.com/0xjeffro/tx-parser/solana/types"
 	"log"
@@ -44,12 +43,14 @@ func WebhookHandler(bytes []byte) {
 			}
 		}
 		var count int = 0
+		var mint string
 		for k, v := range swapTokens {
 			if v {
-				fmt.Println("Token: ", k)
+				mint = k
 				count++
 			}
 		}
+		log.Println("Mint: ", mint)
 		// if there is more than 1 token in the swap, continue
 		if count > 1 {
 			log.Println("More than 1 token in the swap")
@@ -62,11 +63,13 @@ func WebhookHandler(bytes []byte) {
 		row := db.PumpInsiderEvent{
 			Tx:        data.RawTx.Transaction.Signatures[0],
 			BlockTime: time.Unix(blockTime, 0),
-			NBuy:      nBuy,
-			NSell:     nSell,
-			BuyAmt:    buyAmount,
-			SellAmt:   sellAmount,
-			IsCreate:  isCreate,
+
+			Mint:     mint,
+			NBuy:     nBuy,
+			NSell:    nSell,
+			BuyAmt:   buyAmount,
+			SellAmt:  sellAmount,
+			IsCreate: isCreate,
 		}
 		err := db.InsertInsiderEvent(row)
 		if err != nil {
