@@ -5,7 +5,7 @@ import "time"
 type Txs struct {
 	Tx                   string    `gorm:"primaryKey;type:text"`
 	Slot                 int64     `gorm:"column:slot;type:int8"`
-	User                 string    `gorm:"column:who;type:text"`
+	User                 string    `gorm:"column:user;type:text"`
 	NUser                int8      `gorm:"column:n_user;type:int8"`
 	Mint                 string    `gorm:"column:mint;type:text"`
 	NMint                int8      `gorm:"column:n_mint;type:int8"`
