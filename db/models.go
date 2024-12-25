@@ -19,6 +19,6 @@ type Txs struct {
 	JitotipAmt           uint64    `gorm:"column:jitotip_amt;type:numeric"`
 	VirtualSolReserves   uint64    `gorm:"column:virtual_sol_reserves;type:numeric"`
 	VirtualTokenReserves uint64    `gorm:"column:virtual_token_reserves;type:numeric"`
-	BlockTime            time.Time `gorm:"column:block_time;type:timestamp"`
-	CreatedAt            time.Time `gorm:"column:created_at;type:timestamp;default:now()"`
+	BlockTime            time.Time `gorm:"column:block_time;type:timestamptz"`
+	CreatedAt            time.Time `gorm:"column:created_at;type:timestamptz;default:now()"`
 }
