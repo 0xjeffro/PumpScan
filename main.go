@@ -8,14 +8,7 @@ import (
 )
 
 func main() {
-	if os.Getenv("SUPA_URL") == "" {
-		log.Println("SUPA_URL is required")
-		return
-	}
-	if os.Getenv("SUPA_SECRET_KEY") == "" {
-		log.Println("SUPA_SECRET_KEY is required")
-		return
-	}
+
 	port := func() string {
 		if os.Getenv("PORT") == "" {
 			return "8080"

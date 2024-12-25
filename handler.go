@@ -2,78 +2,122 @@ package main
 
 import (
 	"PumpScan/db"
-	"encoding/json"
-	"github.com/0xjeffro/tx-parser/solana"
+	"PumpScan/parser"
 	"github.com/0xjeffro/tx-parser/solana/types"
 	"log"
+	"slices"
+	"strings"
 	"time"
 )
 
-func WebhookHandler(bytes []byte) {
-	var txs types.RawTxs
-	err := json.Unmarshal(bytes, &txs)
-	if err != nil {
-		log.Println("Transaction unmarshal error: ", err)
-		return
-	}
-	parsedData, err := solana.Parser(bytes)
-	if err != nil {
-		log.Println("Parser error: ", err)
-		return
-	}
-	for _, data := range parsedData {
-		blockTime := data.RawTx.BlockTime
-		var nBuy, nSell int = 0, 0
-		var buyAmount, sellAmount uint64 = 0, 0
-		var isCreate bool = false
-		var swapTokens = make(map[string]bool)
-		for _, action := range data.Actions {
-			switch a := action.(type) {
-			case *types.PumpFunCreateAction:
-				isCreate = true
-				swapTokens[a.Mint] = true
-			case *types.PumpFunBuyAction:
-				nBuy++
-				buyAmount += a.ToTokenAmount
-				swapTokens[a.ToToken] = true
-			case *types.PumpFunSellAction:
-				nSell++
-				sellAmount += a.FromTokenAmount
-				swapTokens[a.FromToken] = true
-			}
-		}
-		var count int = 0
-		var mint string
-		for k, v := range swapTokens {
-			if v {
-				mint = k
-				count++
-			}
-		}
-		log.Println("Mint: ", mint)
-		// if there is more than 1 token in the swap, continue
-		if count > 1 {
-			log.Println("More than 1 token in the swap")
-			continue
-		}
-		// if there is not a bundle of buy and sell, continue
-		if nBuy+nSell <= 1 && isCreate == false {
-			continue
-		}
-		row := db.PumpInsiderEvent{
-			Tx:        data.RawTx.Transaction.Signatures[0],
-			BlockTime: time.Unix(blockTime, 0),
+var jitoTipAddress = []string{
+	"96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5",
+	"HFqU5x63VTqvQss8hp11i4wVV8bD44PvwucfZ2bU7gRe",
+	"Cw8CFyM9FkoMi7K7Crf6HNQqf4uEMzpKw6QNghXLvLkY",
+	"ADaUMid9yfUytqMBgopwjb2DTLSokTSzL1zt6iGPaS49",
+	"DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh",
+	"ADuUkR4vqLUMWXxW9gh6D6L8pMSawimctcNZ5pGwDcEt",
+	"DttWaMuVvTiduZRnguLF7jNxTgiMBZ1hyAumKUiL2KRL",
+	"3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT",
+}
 
-			Mint:     mint,
-			NBuy:     nBuy,
-			NSell:    nSell,
-			BuyAmt:   buyAmount,
-			SellAmt:  sellAmount,
-			IsCreate: isCreate,
+func joinStrings(strs []string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	if len(strs) == 1 {
+		return strs[0]
+	}
+	return strings.Join(strs, ",")
+}
+
+func WebhookHandler(bytes []byte) {
+	actions, ctx, err := parser.Parser(bytes)
+	if err != nil {
+		log.Println("[WebhookHandler] Parser error: ", err)
+		return
+	}
+
+	if len(actions) == 0 {
+		log.Println("[WebhookHandler] No actions found tx: ", ctx.RawTx.Transaction.Signatures[0])
+		return
+	}
+
+	var txRow db.Txs
+	txRow.Tx = ctx.RawTx.Transaction.Signatures[0]
+	txRow.BlockTime = time.Unix(ctx.RawTx.BlockTime, 0)
+	txRow.Slot = ctx.RawTx.Slot
+
+	var userMap = make(map[string]bool)
+	var mintMap = make(map[string]bool)
+
+	for _, action := range actions {
+
+		switch a := action.(type) {
+		case *types.PumpFunCreateAction:
+			userMap[a.Who] = true
+			mintMap[a.Mint] = true
+			txRow.IsCreate = true
+		case *types.PumpFunAnchorSelfCPILogSwapAction:
+			userMap[a.User] = true
+			mintMap[a.Mint] = true
+			if a.IsBuy {
+				txRow.BuyAmt += a.TokenAmount
+				txRow.BuySOLAmt += a.SolAmount
+				txRow.NBuy++
+
+				// VirtualTokenReserves and VirtualSolReserves may be overwritten by subsequent actions;
+				// only applies when there's exactly one swap (NBuy + NSell == 1)
+				txRow.VirtualTokenReserves = a.VirtualTokenReserves
+				txRow.VirtualSolReserves = a.VirtualSolReserves
+			} else {
+				txRow.SellAmt += a.TokenAmount
+				txRow.SellSOLAmt += a.SolAmount
+				txRow.NSell++
+
+				// VirtualTokenReserves and VirtualSolReserves may be overwritten by subsequent actions;
+				// only applies when there's exactly one swap (NBuy + NSell == 1)
+				txRow.VirtualTokenReserves = a.VirtualTokenReserves
+				txRow.VirtualSolReserves = a.VirtualSolReserves
+			}
+		case *types.SystemProgramTransferAction:
+			if slices.Contains(jitoTipAddress, a.To) {
+				txRow.JitotipAmt += a.Lamports
+			}
 		}
-		err := db.InsertInsiderEvent(row)
+	}
+
+	numMint := 0
+	var mints []string
+	for k, v := range mintMap {
+		if v {
+			numMint++
+			mints = append(mints, k)
+		}
+	}
+
+	numUser := 0
+	var users []string
+	for k, v := range userMap {
+		if v {
+			numUser++
+			users = append(users, k)
+		}
+	}
+
+	txRow.NMint = int8(numMint)
+	txRow.Mint = joinStrings(mints)
+
+	txRow.NUser = int8(numUser)
+	txRow.User = joinStrings(users)
+
+	if numUser == 0 {
+		log.Println("[WebhookHandler] 'Who' is empty, tx: ", ctx.RawTx.Transaction.Signatures[0])
+		return
+	} else {
+		err := db.Insert(txRow)
 		if err != nil {
-			log.Println("Error inserting insider event: ", err)
+			log.Println("[WebhookHandler] Error inserting tx: ", err)
 		}
 	}
 }
